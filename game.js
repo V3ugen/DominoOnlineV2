@@ -19,9 +19,10 @@ const SAY = {
   loseNet: ["Соперник выиграл. Ша, бывает! Реванш — это святое!", "Проиграли? Не переживайте, на Привозе и не такое бывает.", "Сегодня не ваш день. Нажмите «Заново» и отыграйтесь!", "Соперник победил. Но вы всё равно красавчик!"],
   winG: ["Победа! Одесса вами гордится! 🎉", "Ай, молодец! Красиво сыграли!", "Шоб вы так жили! Победа за вами!", "Вы выиграли! Остальные платят за чай."],
   loseG: ["Не ваш день. Нажмите «Заново» и отыграйтесь!", "Проиграли? Ша, бывает! Реванш — это святое!", "Не переживайте, на Привозе и не такое бывает.", "Победил другой. Но вы всё равно красавчик!"],
+  midG: ["Не первый, но и не последний. Серебро — тоже награда!", "Вы вышли из игры живым и здоровым. Уважаем!", "Проигрывает другой, а вы — молодец!"],
   draw0: ["Ничья! Как в Одессе: все довольны и никто не доволен.", "Ничья, шо тут скажешь. Разошлись мирно!", "Поровну! Такое бывает только в Одессе."]
 };
-const VER = 'v1';
+const VER = 'v2';
 // ---------- счёт (хранится на устройстве) ----------
 const SCORE_KEY = 'domino-score-v1';
 function loadScore() {
@@ -41,6 +42,9 @@ function scoreText(m, short) {
   const r = loadScore()[m];
   return (short ? 'Побед ' : 'побед ') + r.w + ' · ' + (short ? 'Пораж. ' : 'поражений ') + r.l + (r.d ? ' · ' + (short ? 'Ничьих ' : 'ничьих ') + r.d : '');
 }
+const NAME_KEY = 'domino-name';
+function getName() { try { return (localStorage.getItem(NAME_KEY) || '').slice(0, 12); } catch (e) { return ''; } }
+function setName(n) { n = String(n || '').replace(/\s+/g, ' ').trim().slice(0, 12); try { localStorage.setItem(NAME_KEY, n); } catch (e) {} return n; }
 const FONT = '"Segoe UI", Roboto, Arial, sans-serif';
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const pips = t => t[0] + t[1];
@@ -90,7 +94,7 @@ class Screen extends Phaser.Scene {
 class Game extends Screen {
   constructor(key) { super(key || 'game'); }
 
-  init(d) { d = d || {}; this.net = d.mode === 'net'; this.role = this.net && this.game.netCtx ? this.game.netCtx.role : null; this.isHost = this.role === 'host'; }
+  init(d) { d = d || {}; this.net = d.mode === 'net'; this.role = this.net && this.game.netCtx ? this.game.netCtx.role : null; this.isHost = this.role === 'host'; this.oppName = this.net && this.game.netCtx ? this.game.netCtx.oppName || '' : ''; }
 
   create() {
     this.sfx = this.game.sfx || (this.game.sfx = new Sfx());
@@ -107,7 +111,7 @@ class Game extends Screen {
     this.botGfx = this.add.graphics();
     const bz = this.add.graphics(); bz.fillStyle(0x111115).fillRoundedRect(10, 190, 460, 380, 8);
     bz.lineStyle(2, 0x3a3a4a).strokeRoundedRect(10, 190, 460, 380, 8);
-    this.add.text(24, 600, 'Ваши костяшки — нажмите, чтобы сходить:', { fontFamily: FONT, fontSize: '13px', color: '#aaa' });
+    this.add.text(24, 600, 'Ваши костяшки' + (getName() ? ' (' + getName() + ')' : '') + ' — нажмите, чтобы сходить:', { fontFamily: FONT, fontSize: '13px', color: '#aaa' });
     this.markL = this.add.text(0, 0, 'ЛЕВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#007bff', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.markR = this.add.text(0, 0, 'ПРАВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#28a745', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.bazar = this.btn(90, 762, 170, 'Привоз', 0x28a745, () => this.takeBazar());
@@ -297,7 +301,7 @@ class Game extends Screen {
   }
 
   drawBot() {
-    this.botLabel.setText((this.net ? 'Соперник' : 'Соперник (бот)') + ', костяшек: ' + this.hb.length);
+    this.botLabel.setText((this.net ? (this.oppName || 'Соперник') : 'Соперник (бот)') + ', костяшек: ' + this.hb.length);
     this.botGfx.clear().fillStyle(0x2a2a35).lineStyle(1, 0x555566);
     const n = this.hb.length, sp = Math.min(30, 420 / Math.max(n, 1));
     for (let i = 0; i < n; i++) {
@@ -486,7 +490,7 @@ class Table extends Game {
     this.oppT = [0, 1, 2].map(() => this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '12px', fontStyle: 'bold', color: '#ddd' }).setOrigin(0.5));
     const bz = this.add.graphics(); bz.fillStyle(0x111115).fillRoundedRect(10, 190, 460, 380, 8);
     bz.lineStyle(2, 0x3a3a4a).strokeRoundedRect(10, 190, 460, 380, 8);
-    this.add.text(24, 600, 'Ваши костяшки — нажмите, чтобы сходить:', { fontFamily: FONT, fontSize: '13px', color: '#aaa' });
+    this.add.text(24, 600, 'Ваши костяшки' + (getName() ? ' (' + getName() + ')' : '') + ' — нажмите, чтобы сходить:', { fontFamily: FONT, fontSize: '13px', color: '#aaa' });
     this.markL = this.add.text(0, 0, 'ЛЕВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#007bff', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.markR = this.add.text(0, 0, 'ПРАВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#28a745', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.bazar = this.btn(90, 762, 170, 'Привоз', 0x28a745, () => this.takeBazar());
@@ -498,7 +502,7 @@ class Table extends Game {
     });
     this.recorded = false; this.sideBtns = []; this.lastHl = null; this.lastTxt = null;
     this.hobj = []; this.hp = []; this.board = []; this.counts = []; this.poolN = 0;
-    this.seat = null; this.cur = null; this.turn = null; this.over = false; this.busy = true; this.waiting = false;
+    this.seat = null; this.names = []; this.outSeats = []; this.cur = null; this.turn = null; this.over = false; this.busy = true; this.waiting = false;
     this.evq = []; this.hs = null;
     this.drawOpps(); this.updateButtons();
     this.time.addEvent({ delay: 80, loop: true, callback: () => this.pump() });
@@ -511,11 +515,13 @@ class Table extends Game {
     this.scoreD.setText(r.d ? 'ничьих: ' + r.d : '');
   }
 
+  baseName(seat) { return (this.names && this.names[seat]) || 'Игрок ' + (seat + 1); }
+  isPartner(seat) { return this.teams && this.seat !== null && seat !== this.seat && ((seat - this.seat + this.n) % this.n) === 2; }
   nm(seat) {
     if (seat === this.seat) return 'Вы';
-    if (this.teams && this.seat !== null && ((seat - this.seat + this.n) % this.n) === 2) return 'Напарник';
-    return 'Игрок ' + (seat + 1);
+    return this.baseName(seat) + (this.isPartner(seat) ? ' (напарник)' : '');
   }
+  nextSeat(seat) { for (let k = 1; k <= this.n; k++) { const x = (seat + k) % this.n; if (!this.hs.out.includes(x)) return x; } return seat; }
   oppX(seat) { const k = (seat - this.seat + this.n) % this.n - 1, cw = 460 / (this.n - 1); return 10 + cw * (k + 0.5); }
 
   // ---------- соперники сверху ----------
@@ -528,8 +534,8 @@ class Table extends Game {
       const seat = (this.seat + 1 + k) % n, x0 = 10 + cw * k, cx = x0 + cw / 2, act = this.cur === seat && !this.over;
       g.fillStyle(act ? 0x1f3a24 : 0x22222b).fillRoundedRect(x0 + 3, 131, cw - 6, 56, 6);
       if (act) g.lineStyle(2, 0x2ecc40).strokeRoundedRect(x0 + 3, 131, cw - 6, 56, 6);
-      const partner = this.teams && this.nm(seat) === 'Напарник', c = this.counts[seat] || 0;
-      this.oppT[k].setPosition(cx, 143).setText(this.nm(seat) + ' · ' + c).setColor(partner ? '#7fd1ff' : '#ddd').setVisible(true);
+      const partner = this.isPartner(seat), place = this.outSeats.indexOf(seat) + 1, c = place ? 0 : (this.counts[seat] || 0);
+      this.oppT[k].setPosition(cx, 143).setText(this.baseName(seat) + ' · ' + (place ? place + '-е место' : c)).setColor(place ? '#2ecc40' : partner ? '#7fd1ff' : '#ddd').setVisible(true);
       const sp = Math.min(13, (cw - 24) / Math.max(c, 1));
       g.fillStyle(0x3a3a4a).lineStyle(1, 0x666677);
       for (let i = 0; i < c; i++) { const x = cx + (i - (c - 1) / 2) * sp; g.fillRoundedRect(x - 4, 156, 8, 26, 2).strokeRoundedRect(x - 4, 156, 8, 26, 2); }
@@ -583,9 +589,10 @@ class Table extends Game {
     const n = this.n, deck = this.makeDeck(), hands = [];
     for (let i = 0; i < n; i++) hands.push(deck.splice(0, 7));
     const first = Math.floor(Math.random() * n);
-    this.hs = { hands, pool: deck, board: [], turn: first, passes: 0, over: false };
-    this.ctx.conns.forEach((cn, i) => { if (cn.open) cn.send({ type: 'deal', seat: i + 1, n, teams: this.teams, hand: hands[i + 1], first, pool: deck.length }); });
-    this.evq.push({ type: 'deal', seat: 0, n, teams: this.teams, hand: hands[0].map(t => t.slice()), first, pool: deck.length });
+    this.hs = { hands, pool: deck, board: [], turn: first, passes: 0, over: false, out: [] };
+    const names = [getName() || 'Игрок 1']; this.ctx.conns.forEach((cn, i) => names.push(cn._name || 'Игрок ' + (i + 2)));
+    this.ctx.conns.forEach((cn, i) => { if (cn.open) cn.send({ type: 'deal', seat: i + 1, n, teams: this.teams, hand: hands[i + 1], first, pool: deck.length, names }); });
+    this.evq.push({ type: 'deal', seat: 0, n, teams: this.teams, hand: hands[0].map(t => t.slice()), first, pool: deck.length, names });
   }
 
   hostMsg(m) {
@@ -614,7 +621,13 @@ class Table extends Game {
       side === 'l' && e ? b.unshift({ l, r }) : b.push({ l, r });
       s.passes = 0;
       const ev = { type: 'play', seat, tile, side };
-      if (!hand.length) ev.end = this.hostFinish('domino', seat); else { s.turn = (seat + 1) % n; ev.next = s.turn; }
+      if (!hand.length) {
+        if (this.teams) ev.end = this.hostFinish('domino', seat);
+        else { // выбыл один — остальные доигрывают, пока не определится проигравший
+          s.out.push(seat); ev.out = seat; ev.place = s.out.length;
+          if (n - s.out.length <= 1) ev.end = this.hostFinish('domino', seat); else { s.turn = this.nextSeat(seat); ev.next = s.turn; }
+        }
+      } else { s.turn = this.nextSeat(seat); ev.next = s.turn; }
       this.emit(ev);
     } else if (m.act === 'draw') {
       if (can || !s.pool.length) return;
@@ -623,7 +636,7 @@ class Table extends Game {
       if (can || s.pool.length) return;
       s.passes++;
       const ev = { type: 'pass', seat };
-      if (s.passes >= n) ev.end = this.hostFinish('fish', seat); else { s.turn = (seat + 1) % n; ev.next = s.turn; }
+      if (s.passes >= n - s.out.length) ev.end = this.hostFinish('fish', seat); else { s.turn = this.nextSeat(seat); ev.next = s.turn; }
       this.emit(ev);
     }
   }
@@ -631,15 +644,19 @@ class Table extends Game {
   hostFinish(kind, seat) {
     const s = this.hs, n = this.n; s.over = true;
     const pips = s.hands.map(h => h.reduce((a, t) => a + t[0] + t[1], 0)), res = Array(n).fill('lose');
-    if (kind === 'domino') { if (this.teams) { for (let i = 0; i < n; i++) if (i % 2 === seat % 2) res[i] = 'win'; } else res[seat] = 'win'; }
-    else if (this.teams) {
-      const a = pips[0] + pips[2], b = pips[1] + pips[3];
-      if (a === b) res.fill('draw0'); else for (let i = 0; i < n; i++) if ((a < b) === (i % 2 === 0)) res[i] = 'win';
-    } else {
-      const mn = Math.min(...pips), w = pips.map((p, i) => (p === mn ? i : -1)).filter(i => i >= 0);
-      w.forEach(i => { res[i] = w.length > 1 ? 'draw0' : 'win'; });
+    if (this.teams) {
+      if (kind === 'domino') { for (let i = 0; i < n; i++) if (i % 2 === seat % 2) res[i] = 'win'; }
+      else {
+        const a = pips[0] + pips[2], b = pips[1] + pips[3];
+        if (a === b) res.fill('draw0'); else for (let i = 0; i < n; i++) if ((a < b) === (i % 2 === 0)) res[i] = 'win';
+      }
+      return { kind, winner: seat, pips, res };
     }
-    return { kind, winner: seat, pips, res };
+    // каждый сам за себя: места по порядку выбытия, остальные — по очкам (меньше — выше)
+    const rest = [...Array(n).keys()].filter(i => !s.out.includes(i)).sort((a, b) => pips[a] - pips[b] || a - b);
+    const order = s.out.concat(rest);
+    order.forEach((st, k) => { res[st] = k === 0 ? 'win' : k === n - 1 ? 'lose' : 'mid'; });
+    return { kind, winner: seat, pips, res, order };
   }
 
   rematch() {
@@ -659,12 +676,12 @@ class Table extends Game {
       case 'lobby': if (this.seat === null) this.setMsg('Ждём игроков: ' + m.count + ' из ' + m.n + '…'); break;
       case 'restart': this.scene.restart(); break;
       case 'deal': {
-        this.seat = m.seat; this.n = m.n; this.teams = m.teams; this.hp = m.hand; this.poolN = m.pool;
+        this.seat = m.seat; this.n = m.n; this.teams = m.teams; this.hp = m.hand; this.poolN = m.pool; this.names = m.names || []; this.outSeats = [];
         this.counts = Array(m.n).fill(7); this.board = []; this.hobj = []; this.cur = m.first; this.turn = 'o'; this.busy = true;
         this.hp.forEach(t => this.hobj.push(this.makeHandObj(t)));
         this.layoutHand(); this.drawOpps(); this.updateButtons(); this.sfx.coin();
         let txt = 'Жребий брошен: ' + (m.first === this.seat ? 'вы ходите первым, таки везёт!' : 'первым ходит ' + this.nm(m.first) + '.');
-        if (this.teams) txt += '\nВаш напарник — Игрок ' + (((this.seat + 2) % this.n) + 1) + '.';
+        if (this.teams) txt += '\nВаш напарник — ' + this.baseName((this.seat + 2) % this.n) + '.';
         this.setMsg(txt);
         this.time.delayedCall(2600, () => { this.busy = false; this.setTurn(m.first); });
         break;
@@ -672,13 +689,17 @@ class Table extends Game {
       case 'left': case 'bye': {
         if (this.over) break;
         this.over = true; this.turn = null; this.busy = false; this.doneWait();
-        this.setMsg(this.nm(m.seat || 0) + ' отключился. Нажмите «Меню».');
+        this.setMsg((m.seat === undefined ? this.baseName(0) : this.nm(m.seat)) + ' отключился. Нажмите «Меню».');
         this.updateButtons(); this.layoutHand(); this.drawOpps(); break;
       }
       case 'play': {
         this.doneWait();
         const t = m.tile, mine = m.seat === this.seat;
         this.lastTxt = mine ? null : '➜ ' + this.nm(m.seat) + ' поставил [' + t[0] + '|' + t[1] + ']' + (this.board.length ? (m.side === 'l' ? ' слева' : ' справа') : '');
+        if (m.out !== undefined && !m.end) {
+          this.outSeats.push(m.out);
+          this.lastTxt = (mine ? 'Вы выложили всё' : this.nm(m.seat) + ' выложил всё') + ' и занял' + (mine ? 'и' : '') + ' ' + m.place + '-е место! Остальные играют дальше.';
+        }
         if (this.lastTxt) this.setMsg(this.lastTxt);
         let ho = mine ? this.hobj.find(o => o.tile[0] === t[0] && o.tile[1] === t[1]) : null;
         if (!ho) { ho = this.makeTile(t[0], t[1], mine ? W / 2 : this.oppX(m.seat), mine ? 700 : 168).setVisible(!mine); ho.tile = t; }
@@ -710,13 +731,17 @@ class Table extends Game {
 
   finishTable(e) {
     const key = e.res[this.seat];
-    if (!this.recorded) { this.recorded = true; addResult('grp', key); this.refreshScore(); }
+    if (!this.recorded) { this.recorded = true; if (key !== 'mid') addResult('grp', key); this.refreshScore(); }
     this.over = true; this.turn = null; this.busy = false; this.doneWait();
     let head;
-    if (e.kind === 'domino') head = e.winner === this.seat ? 'Домино! Вы выложили всё!' : 'Домино! ' + this.nm(e.winner) + ' выложил всё!';
-    else if (this.teams) { const a = e.pips[this.seat % 2], b = e.pips[1 - (this.seat % 2)]; head = 'РЫБА! Очки: ваша команда ' + (e.pips[this.seat % 2] + e.pips[this.seat % 2 + 2]) + ', соперники ' + (e.pips[1 - (this.seat % 2)] + e.pips[1 - (this.seat % 2) + 2]) + '.'; }
-    else head = 'РЫБА! Очки: ' + e.pips.map((p, i) => this.nm(i).toLowerCase() === 'вы' ? 'вы ' + p : 'игрок ' + (i + 1) + ' — ' + p).join(', ') + '.';
-    this.setMsg(head + ' ' + pick(SAY[key === 'win' ? 'winG' : key === 'lose' ? 'loseG' : 'draw0']));
+    if (this.teams) {
+      if (e.kind === 'domino') head = e.winner === this.seat ? 'Домино! Вы выложили всё!' : 'Домино! ' + this.nm(e.winner) + ' выложил всё!';
+      else head = 'РЫБА! Очки: ваша команда ' + (e.pips[this.seat % 2] + e.pips[this.seat % 2 + 2]) + ', соперники ' + (e.pips[1 - (this.seat % 2)] + e.pips[1 - (this.seat % 2) + 2]) + '.';
+    } else {
+      head = (e.kind === 'fish' ? 'РЫБА! ' : '') + 'Итог: ' + e.order.map((st, k) => (k + 1) + '. ' + this.nm(st)).join('  ');
+      if (key === 'mid') head += '\nВы на ' + (e.order.indexOf(this.seat) + 1) + '-м месте.';
+    }
+    this.setMsg(head + ' ' + pick(SAY[key === 'win' ? 'winG' : key === 'lose' ? 'loseG' : key === 'mid' ? 'midG' : 'draw0']));
     key === 'lose' ? this.sfx.lose() : this.sfx.win();
     this.updateButtons(); this.layoutHand(); this.drawOpps();
   }
@@ -777,6 +802,12 @@ class Menu extends Screen {
     this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a1f);
     this.add.text(W / 2, 190, 'ДОМИНО', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
     this.add.text(W / 2, 255, 'по-одесски', { fontFamily: FONT, fontSize: '32px', fontStyle: 'bold', color: '#ffd400' }).setOrigin(0.5);
+    const nb = this.btn(W / 2, 322, 260, '', 0x3a3a4a, () => {
+      const v = window.prompt('Как вас зовут? (до 12 символов)', getName());
+      if (v !== null) { setName(v); upd(); }
+    }, 17);
+    const upd = () => nb.t.setText(getName() ? '👤 ' + getName() : '👤 Ввести имя');
+    upd();
     this.btn(W / 2, 380, 320, '🤖  Играть с ботом', 0x28a745, () => this.scene.start('game', { mode: 'bot' }), 21);
     this.btn(W / 2, 470, 320, '🌐  Играть по сети', 0x007bff, () => this.scene.start('lobby'), 21);
     this.add.text(W / 2, 780, 'версия ' + VER, { fontFamily: FONT, fontSize: '13px', color: '#666' }).setOrigin(0.5);
@@ -875,13 +906,16 @@ class Lobby extends Screen {
         conn.on('open', () => {
           if (this.launched || ctx.conns.length >= cfg.n - 1) { conn.close(); return; }
           ctx.conns.push(conn);
-          conn.on('data', d => ctx.inbox.push(Object.assign({}, d, { _c: conn })));
+          conn.on('data', d => {
+            if (d && d.type === 'name') { conn._name = String(d.name || '').slice(0, 12); if (cfg.n === 2) ctx.oppName = conn._name; return; }
+            ctx.inbox.push(Object.assign({}, d, { _c: conn }));
+          });
           const gone = () => {
             if (this.launched) ctx.inbox.push({ type: 'bye', _c: conn });
             else { const k = ctx.conns.indexOf(conn); if (k >= 0) ctx.conns.splice(k, 1); this.refreshWait(); this.broadcastLobby(); }
           };
           conn.on('close', gone); conn.on('error', gone);
-          conn.send({ type: 'room', n: cfg.n, teams: cfg.teams });
+          conn.send({ type: 'room', n: cfg.n, teams: cfg.teams, name: getName() });
           this.refreshWait(); this.broadcastLobby();
           if (ctx.conns.length === cfg.n - 1) this.time.delayedCall(600, () => this.launchHost());
         });
@@ -934,13 +968,13 @@ class Lobby extends Screen {
         conn.on('close', () => ctx.inbox.push({ type: 'bye' }));
         conn.on('error', () => { if (opened) ctx.inbox.push({ type: 'bye' }); else fail('Ошибка соединения.'); });
         conn.on('open', () => {
-          opened = true; this.timeout.remove();
+          opened = true; this.timeout.remove(); conn.send({ type: 'name', name: getName() });
           this.clear(); this.txt(300, 'Подключились! Входим в комнату…', 20, '#fff');
           this.timeout = this.time.delayedCall(8000, () => fail('Хозяин комнаты не ответил.'));
           this.roomPoll = this.time.addEvent({ delay: 100, loop: true, callback: () => {
             const m = ctx.inbox[0]; if (!m || m.type !== 'room') return;
             ctx.inbox.shift(); this.roomPoll.remove(); this.timeout.remove();
-            ctx.n = m.n; ctx.teams = m.teams; this.launched = true; this.game.netCtx = ctx;
+            ctx.n = m.n; ctx.teams = m.teams; ctx.oppName = String(m.name || '').slice(0, 12); this.launched = true; this.game.netCtx = ctx;
             if (m.n === 2) this.scene.start('game', { mode: 'net' }); else this.scene.start('table');
           } });
         });
