@@ -22,7 +22,8 @@ const SAY = {
   midG: ["Не первый, но и не последний. Серебро — тоже награда!", "Вы вышли из игры живым и здоровым. Уважаем!", "Проигрывает другой, а вы — молодец!"],
   draw0: ["Ничья! Как в Одессе: все довольны и никто не доволен.", "Ничья, шо тут скажешь. Разошлись мирно!", "Поровну! Такое бывает только в Одессе."]
 };
-const VER = 'v2';
+const VER = 'v3';
+const TARGET = 101;
 // ---------- счёт (хранится на устройстве) ----------
 const SCORE_KEY = 'domino-score-v1';
 function loadScore() {
@@ -38,6 +39,11 @@ function addResult(mode, key) {
   const s = loadScore(), k = key === 'win' ? 'w' : key === 'lose' ? 'l' : 'd';
   s[mode][k]++; saveScore(s); return s;
 }
+// Счёт текущего матча (в шапке игры): обнуляется в новом матче и при выходе в меню.
+// Общая статистика (в меню) хранится отдельно и не сбрасывается.
+const SESS = { bot: { w: 0, l: 0, d: 0 }, net: { w: 0, l: 0, d: 0 }, grp: { w: 0, l: 0, d: 0 } };
+function resetSess(m) { (m ? [m] : Object.keys(SESS)).forEach(k => { SESS[k].w = SESS[k].l = SESS[k].d = 0; }); }
+function addSess(m, key) { const k = key === 'win' ? 'w' : key === 'lose' ? 'l' : key === 'draw0' ? 'd' : null; if (k) SESS[m][k]++; }
 function scoreText(m, short) {
   const r = loadScore()[m];
   return (short ? 'Побед ' : 'побед ') + r.w + ' · ' + (short ? 'Пораж. ' : 'поражений ') + r.l + (r.d ? ' · ' + (short ? 'Ничьих ' : 'ничьих ') + r.d : '');
@@ -126,7 +132,7 @@ class Game extends Screen {
   }
 
   refreshScore() {
-    const r = loadScore()[this.scoreKey || (this.net ? 'net' : 'bot')];
+    const r = SESS[this.scoreKey || (this.net ? 'net' : 'bot')];
     this.scoreW.setText('ПОБЕДЫ\n' + r.w).setFontSize('13px'); this.scoreL.setText('ПОРАЖЕНИЯ\n' + r.l);
     this.scoreD.setText(r.d ? 'ничьих: ' + r.d : '');
   }
@@ -248,7 +254,7 @@ class Game extends Screen {
     this.fin('РЫБА! Очки: вы ' + a + ', ' + (this.net ? 'соперник ' : 'бот ') + b + '.', k, () => (k === 'lose' ? this.sfx.lose() : this.sfx.win()));
   }
   fin(msg, key, snd) {
-    if (!this.recorded) { this.recorded = true; addResult(this.net ? 'net' : 'bot', key); this.refreshScore(); }
+    if (!this.recorded) { this.recorded = true; addResult(this.net ? 'net' : 'bot', key); addSess(this.net ? 'net' : 'bot', key); this.refreshScore(); }
     this.over = true; this.turn = null; this.busy = false;
     const kk = this.net && (key === 'win' || key === 'lose') ? key + 'Net' : key;
     this.say(msg + ' ' + pick(SAY[kk])); snd(); this.updateButtons(); this.layoutHand(); return true;
@@ -472,7 +478,7 @@ class Table extends Game {
   init() {
     const c = this.game.netCtx || {};
     this.ctx = c; this.isHost = c.role === 'host'; this.n = c.n || 3; this.teams = !!c.teams;
-    this.net = true; this.scoreKey = 'grp';
+    this.net = true; this.scoreKey = 'grp'; this.scoreMode = c.score || 'none';
   }
 
   create() {
@@ -495,12 +501,13 @@ class Table extends Game {
     this.markR = this.add.text(0, 0, 'ПРАВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#28a745', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.bazar = this.btn(90, 762, 170, 'Привоз', 0x28a745, () => this.takeBazar());
     this.passB = this.btn(90, 762, 170, 'Пропустить ход', 0xdc3545, () => this.pass()).setVisible(false);
-    this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again());
+    this.againB = this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again());
     this.btn(340, 762, 90, 'Меню', 0x6f42c1, () => { this.leaveNet(); this.scene.start('menu'); });
     this.snd = this.btn(428, 762, 56, this.sfx.on ? '🔊' : '🔇', 0x555566, () => {
       this.sfx.on = !this.sfx.on; this.snd.t.setText(this.sfx.on ? '🔊' : '🔇');
     });
-    this.recorded = false; this.sideBtns = []; this.lastHl = null; this.lastTxt = null;
+    this.matchT = this.add.text(W / 2, 583, '', { fontFamily: FONT, fontSize: '12px', fontStyle: 'bold', color: '#ffd400' }).setOrigin(0.5);
+    this.recorded = false; this.sideBtns = []; this.lastHl = null; this.lastTxt = null; this.match = null;
     this.hobj = []; this.hp = []; this.board = []; this.counts = []; this.poolN = 0;
     this.seat = null; this.names = []; this.outSeats = []; this.cur = null; this.turn = null; this.over = false; this.busy = true; this.waiting = false;
     this.evq = []; this.hs = null;
@@ -510,7 +517,7 @@ class Table extends Game {
   }
 
   refreshScore() {
-    const r = loadScore().grp;
+    const r = SESS.grp;
     this.scoreW.setText('ПОБЕДЫ\n' + r.w); this.scoreL.setText('ПОРАЖЕНИЯ\n' + r.l);
     this.scoreD.setText(r.d ? 'ничьих: ' + r.d : '');
   }
@@ -527,7 +534,7 @@ class Table extends Game {
   // ---------- соперники сверху ----------
   drawOpps() {
     const g = this.oppGfx.clear(), n = this.n;
-    this.oppT.forEach(t => t.setVisible(false));
+    this.oppT.forEach(t => t.setVisible(false)); this.drawMatch();
     if (this.seat === null) return;
     const cw = 460 / (n - 1);
     for (let k = 0; k < n - 1; k++) {
@@ -540,6 +547,16 @@ class Table extends Game {
       g.fillStyle(0x3a3a4a).lineStyle(1, 0x666677);
       for (let i = 0; i < c; i++) { const x = cx + (i - (c - 1) / 2) * sp; g.fillRoundedRect(x - 4, 156, 8, 26, 2).strokeRoundedRect(x - 4, 156, 8, 26, 2); }
     }
+  }
+
+  drawMatch() {
+    const m = this.match;
+    if (!this.matchT) return;
+    if (this.scoreMode === 'none' || !m || this.seat === null) { this.matchT.setText(''); return; }
+    let t;
+    if (this.teams) t = 'Мы ' + m.totals[this.seat % 2] + ' · Они ' + m.totals[1 - (this.seat % 2)];
+    else t = [...Array(this.n).keys()].map(k => (this.seat + k) % this.n).map(st => (st === this.seat ? 'Вы' : this.baseName(st)) + ' ' + m.totals[st]).join(' · ');
+    this.matchT.setText('До ' + TARGET + ' (раунд ' + (m.round || 1) + '): ' + t + (m.pending ? ' · зависло ' + m.pending : ''));
   }
 
   updateButtons() {
@@ -590,9 +607,14 @@ class Table extends Game {
     for (let i = 0; i < n; i++) hands.push(deck.splice(0, 7));
     const first = Math.floor(Math.random() * n);
     this.hs = { hands, pool: deck, board: [], turn: first, passes: 0, over: false, out: [] };
+    const c = this.ctx; let match = null;
+    if (this.scoreMode !== 'none') {
+      if (!c.match || c.match.done) c.match = { totals: Array(this.teams ? 2 : n).fill(0), pending: 0, round: 0, done: false };
+      c.match.round++; match = { totals: c.match.totals.slice(), pending: c.match.pending, round: c.match.round };
+    }
     const names = [getName() || 'Игрок 1']; this.ctx.conns.forEach((cn, i) => names.push(cn._name || 'Игрок ' + (i + 2)));
-    this.ctx.conns.forEach((cn, i) => { if (cn.open) cn.send({ type: 'deal', seat: i + 1, n, teams: this.teams, hand: hands[i + 1], first, pool: deck.length, names }); });
-    this.evq.push({ type: 'deal', seat: 0, n, teams: this.teams, hand: hands[0].map(t => t.slice()), first, pool: deck.length, names });
+    this.ctx.conns.forEach((cn, i) => { if (cn.open) cn.send({ type: 'deal', seat: i + 1, n, teams: this.teams, hand: hands[i + 1], first, pool: deck.length, names, score: this.scoreMode, match }); });
+    this.evq.push({ type: 'deal', seat: 0, n, teams: this.teams, hand: hands[0].map(t => t.slice()), first, pool: deck.length, names, score: this.scoreMode, match });
   }
 
   hostMsg(m) {
@@ -642,6 +664,31 @@ class Table extends Game {
   }
 
   hostFinish(kind, seat) {
+    const r = this.hostFinishBase(kind, seat);
+    if (this.scoreMode !== 'none') r.match = this.hostScore(r);
+    return r;
+  }
+
+  // Подсчёт очков раунда (как в «Козле»): проигравший пишет очки, матч идёт до TARGET
+  hostScore(r) {
+    const mt = this.ctx.match, n = this.n, pips = r.pips, total = pips.reduce((a, b) => a + b, 0), add = Array(mt.totals.length).fill(0);
+    if (this.teams) {
+      if (r.res[0] === 'draw0') mt.pending += total; // «перерыбье»: очки зависают
+      else { add[r.res[0] === 'win' ? 1 : 0] = total + mt.pending; mt.pending = 0; }
+    } else if (this.scoreMode === 'B') pips.forEach((p, i) => { add[i] = p; }); // каждый пишет свои
+    else { // вариант А: у кого очков больше всех — пишет сумму всех игроков
+      const mx = Math.max(...pips), L = pips.map((p, i) => (p === mx ? i : -1)).filter(i => i >= 0);
+      if (L.length > 1 || mx === 0) mt.pending += total; else { add[L[0]] = total + mt.pending; mt.pending = 0; }
+    }
+    add.forEach((a, i) => { mt.totals[i] += a; });
+    const mx = Math.max(...mt.totals), done = mx >= TARGET, loser = done ? mt.totals.indexOf(mx) : -1;
+    mt.done = done;
+    let res = null;
+    if (done) { res = Array(n).fill('win'); for (let i = 0; i < n; i++) if ((this.teams ? i % 2 : i) === loser) res[i] = 'lose'; }
+    return { totals: mt.totals.slice(), add, pending: mt.pending, done, loser, res };
+  }
+
+  hostFinishBase(kind, seat) {
     const s = this.hs, n = this.n; s.over = true;
     const pips = s.hands.map(h => h.reduce((a, t) => a + t[0] + t[1], 0)), res = Array(n).fill('lose');
     if (this.teams) {
@@ -676,10 +723,11 @@ class Table extends Game {
       case 'lobby': if (this.seat === null) this.setMsg('Ждём игроков: ' + m.count + ' из ' + m.n + '…'); break;
       case 'restart': this.scene.restart(); break;
       case 'deal': {
-        this.seat = m.seat; this.n = m.n; this.teams = m.teams; this.hp = m.hand; this.poolN = m.pool; this.names = m.names || []; this.outSeats = [];
+        this.seat = m.seat; this.n = m.n; this.teams = m.teams; this.hp = m.hand; this.poolN = m.pool; this.names = m.names || []; this.outSeats = []; this.scoreMode = m.score || 'none'; this.match = m.match || null;
+        if (this.match && this.match.round === 1) { resetSess('grp'); this.refreshScore(); }
         this.counts = Array(m.n).fill(7); this.board = []; this.hobj = []; this.cur = m.first; this.turn = 'o'; this.busy = true;
         this.hp.forEach(t => this.hobj.push(this.makeHandObj(t)));
-        this.layoutHand(); this.drawOpps(); this.updateButtons(); this.sfx.coin();
+        this.layoutHand(); this.drawOpps(); this.updateButtons(); this.sfx.coin(); this.againB.t.setText('Заново');
         let txt = 'Жребий брошен: ' + (m.first === this.seat ? 'вы ходите первым, таки везёт!' : 'первым ходит ' + this.nm(m.first) + '.');
         if (this.teams) txt += '\nВаш напарник — ' + this.baseName((this.seat + 2) % this.n) + '.';
         this.setMsg(txt);
@@ -730,8 +778,15 @@ class Table extends Game {
   }
 
   finishTable(e) {
-    const key = e.res[this.seat];
-    if (!this.recorded) { this.recorded = true; if (key !== 'mid') addResult('grp', key); this.refreshScore(); }
+    const key = e.res[this.seat], mt = e.match;
+    if (mt) this.match = { totals: mt.totals, pending: mt.pending, round: (this.match && this.match.round) || 1 };
+    if (!this.recorded) {
+      this.recorded = true;
+      const k = mt ? (mt.done ? mt.res[this.seat] : null) : key; // со счётом до 101 статистика пишется по итогам всей игры
+      if (k && k !== 'mid') addResult('grp', k);
+      addSess('grp', key); // в шапке — победы и поражения раундов текущего матча
+      this.refreshScore();
+    }
     this.over = true; this.turn = null; this.busy = false; this.doneWait();
     let head;
     if (this.teams) {
@@ -739,10 +794,27 @@ class Table extends Game {
       else head = 'РЫБА! Очки: ваша команда ' + (e.pips[this.seat % 2] + e.pips[this.seat % 2 + 2]) + ', соперники ' + (e.pips[1 - (this.seat % 2)] + e.pips[1 - (this.seat % 2) + 2]) + '.';
     } else {
       head = (e.kind === 'fish' ? 'РЫБА! ' : '') + 'Итог: ' + e.order.map((st, k) => (k + 1) + '. ' + this.nm(st)).join('  ');
-      if (key === 'mid') head += '\nВы на ' + (e.order.indexOf(this.seat) + 1) + '-м месте.';
+      if (key === 'mid' && !mt) head += '\nВы на ' + (e.order.indexOf(this.seat) + 1) + '-м месте.';
     }
-    this.setMsg(head + ' ' + pick(SAY[key === 'win' ? 'winG' : key === 'lose' ? 'loseG' : key === 'mid' ? 'midG' : 'draw0']));
-    key === 'lose' ? this.sfx.lose() : this.sfx.win();
+    let tail;
+    if (mt) {
+      const my = this.seat % 2;
+      if (this.teams) {
+        if (e.res[0] === 'draw0') tail = '\nПерерыбье! Очки зависли: ' + mt.pending + '.';
+        else { const w = mt.add[my] > 0 ? 'Вам записано' : 'Соперникам записано'; tail = '\n' + w + ' +' + Math.max(mt.add[0], mt.add[1]) + '.'; }
+      } else {
+        const rows = mt.add.map((a, st) => (a > 0 ? this.nm(st) + ' +' + a : '')).filter(Boolean);
+        tail = '\n' + (rows.length ? 'Записано: ' + rows.join(', ') + '.' : 'Очки зависли: ' + mt.pending + '.');
+      }
+      if (mt.done) {
+        const who = this.teams ? (mt.loser === my ? 'Ваша пара набрала' : 'Соперники набрали') : (mt.loser === this.seat ? 'Вы набрали' : this.nm(mt.loser) + ' набрал');
+        tail += ' КОНЕЦ: ' + who + ' ' + mt.totals[mt.loser] + ' — козёл!';
+      } else tail += ' Нажмите «Дальше».';
+      this.againB.t.setText(mt.done ? 'Заново' : 'Дальше');
+    } else tail = ' ' + pick(SAY[key === 'win' ? 'winG' : key === 'lose' ? 'loseG' : key === 'mid' ? 'midG' : 'draw0']);
+    this.setMsg(head + tail);
+    const sk = mt && mt.done ? mt.res[this.seat] : key;
+    sk === 'lose' ? this.sfx.lose() : this.sfx.win();
     this.updateButtons(); this.layoutHand(); this.drawOpps();
   }
 
@@ -799,6 +871,7 @@ class Table extends Game {
 class Menu extends Screen {
   constructor() { super('menu'); }
   create() {
+    resetSess();
     this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a1f);
     this.add.text(W / 2, 190, 'ДОМИНО', { fontFamily: FONT, fontSize: '64px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
     this.add.text(W / 2, 255, 'по-одесски', { fontFamily: FONT, fontSize: '32px', fontStyle: 'bold', color: '#ffd400' }).setOrigin(0.5);
@@ -870,16 +943,34 @@ class Lobby extends Screen {
     this.cleanup(); this.clear();
     this.txt(160, 'Сколько игроков?', 26, '#fff');
     [2, 3, 4].forEach((n, k) => this.put(this.btn(W / 2, 250 + k * 80, 320, n === 2 ? '2 игрока' : n + ' игрока', n === 2 ? 0x007bff : 0x28a745,
-      () => (n === 4 ? this.showTeams() : this.startHost({ n, teams: false })), 21)));
+      () => (n === 4 ? this.showTeams() : n === 3 ? this.showScoring(3, false) : this.startHost({ n, teams: false, score: 'none' })), 21)));
     this.txt(500, 'При троих каждый играет сам за себя.\nПри четверых можно парами.', 15, '#aaa', { fontStyle: 'normal' });
   }
 
   showTeams() {
     this.clear();
     this.txt(160, 'Как играем вчетвером?', 24, '#fff');
-    this.put(this.btn(W / 2, 260, 340, 'Каждый сам за себя', 0x28a745, () => this.startHost({ n: 4, teams: false }), 20));
-    this.put(this.btn(W / 2, 340, 340, 'Парами 2 на 2', 0x007bff, () => this.startHost({ n: 4, teams: true }), 20));
+    this.put(this.btn(W / 2, 260, 340, 'Каждый сам за себя', 0x28a745, () => this.showScoring(4, false), 20));
+    this.put(this.btn(W / 2, 340, 340, 'Парами 2 на 2', 0x007bff, () => this.showScoring(4, true), 20));
     this.txt(430, 'Парами: напарник сидит напротив — это игрок\nчерез одного после вас по очереди хода.', 15, '#aaa', { fontStyle: 'normal' });
+  }
+
+  showScoring(n, teams) {
+    this.clear();
+    this.txt(130, 'Как считаем очки?', 24, '#fff');
+    const go = score => this.startHost({ n, teams, score });
+    if (teams) {
+      this.put(this.btn(W / 2, 230, 380, 'Козёл: играем до 101', 0x28a745, () => go('T'), 19));
+      this.txt(275, 'Проигравшая пара пишет очки всех игроков.\nРавные очки («перерыбье») зависают до следующего раунда.', 14, '#aaa', { fontStyle: 'normal' });
+    } else {
+      this.put(this.btn(W / 2, 230, 380, 'Вариант А: жёсткий', 0x28a745, () => go('A'), 19));
+      this.txt(275, 'У кого очков больше всех — пишет сумму очков всех игроков.', 14, '#aaa', { fontStyle: 'normal' });
+      this.put(this.btn(W / 2, 345, 380, 'Вариант Б: обычный', 0x007bff, () => go('B'), 19));
+      this.txt(390, 'Каждый пишет свои оставшиеся очки.', 14, '#aaa', { fontStyle: 'normal' });
+    }
+    const y = teams ? 400 : 470;
+    this.put(this.btn(W / 2, y, 380, 'Одна партия (без счёта)', 0x555566, () => go('none'), 19));
+    this.txt(y + 45, 'Одна партия: победитель и проигравший сразу.', 14, '#aaa', { fontStyle: 'normal' });
   }
 
   refreshWait() {
@@ -894,12 +985,12 @@ class Lobby extends Screen {
       this.clear(); this.txt(300, 'Создаём комнату…', 20, '#fff');
       const code = String(1000 + Math.floor(Math.random() * 9000)), peer = new Peer(PEER_PREFIX + code);
       this.peer = peer;
-      const ctx = { role: 'host', n: cfg.n, teams: cfg.teams, peer, conns: [], inbox: [] }; this.ctx = ctx;
+      const ctx = { role: 'host', n: cfg.n, teams: cfg.teams, score: cfg.score || 'none', peer, conns: [], inbox: [] }; this.ctx = ctx;
       peer.on('open', () => {
         this.clear();
         this.txt(120, 'Назовите этот код ' + (cfg.n > 2 ? 'игрокам:' : 'сопернику:'), 20, '#ccc', { fontStyle: 'normal' });
         this.txt(215, code.split('').join(' '), 84, '#ffd400');
-        this.txt(300, cfg.n === 2 ? 'Игра вдвоём' : cfg.n + ' игрока · ' + (cfg.teams ? 'парами 2 на 2' : 'каждый сам за себя'), 17, '#8ab4ff');
+        this.txt(300, cfg.n === 2 ? 'Игра вдвоём' : cfg.n + ' игрока · ' + (cfg.teams ? 'парами 2 на 2' : 'каждый сам за себя') + '\n' + ({ A: 'до 101, вариант А', B: 'до 101, вариант Б', T: 'до 101 (козёл)', none: 'одна партия' }[cfg.score || 'none']), 17, '#8ab4ff');
         this.waitT = this.txt(380, '', 18, '#fff', { fontStyle: 'normal' }); this.refreshWait();
       });
       peer.on('connection', conn => {
@@ -915,7 +1006,7 @@ class Lobby extends Screen {
             else { const k = ctx.conns.indexOf(conn); if (k >= 0) ctx.conns.splice(k, 1); this.refreshWait(); this.broadcastLobby(); }
           };
           conn.on('close', gone); conn.on('error', gone);
-          conn.send({ type: 'room', n: cfg.n, teams: cfg.teams, name: getName() });
+          conn.send({ type: 'room', n: cfg.n, teams: cfg.teams, score: cfg.score || 'none', name: getName() });
           this.refreshWait(); this.broadcastLobby();
           if (ctx.conns.length === cfg.n - 1) this.time.delayedCall(600, () => this.launchHost());
         });
@@ -974,7 +1065,7 @@ class Lobby extends Screen {
           this.roomPoll = this.time.addEvent({ delay: 100, loop: true, callback: () => {
             const m = ctx.inbox[0]; if (!m || m.type !== 'room') return;
             ctx.inbox.shift(); this.roomPoll.remove(); this.timeout.remove();
-            ctx.n = m.n; ctx.teams = m.teams; ctx.oppName = String(m.name || '').slice(0, 12); this.launched = true; this.game.netCtx = ctx;
+            ctx.n = m.n; ctx.teams = m.teams; ctx.score = m.score || 'none'; ctx.oppName = String(m.name || '').slice(0, 12); this.launched = true; this.game.netCtx = ctx;
             if (m.n === 2) this.scene.start('game', { mode: 'net' }); else this.scene.start('table');
           } });
         });
