@@ -22,7 +22,7 @@ const SAY = {
   midG: ["Не первый, но и не последний. Серебро — тоже награда!", "Вы вышли из игры живым и здоровым. Уважаем!", "Проигрывает другой, а вы — молодец!"],
   draw0: ["Ничья! Как в Одессе: все довольны и никто не доволен.", "Ничья, шо тут скажешь. Разошлись мирно!", "Поровну! Такое бывает только в Одессе."]
 };
-const VER = 'v3';
+const VER = 'v35';
 const TARGET = 101;
 // ---------- счёт (хранится на устройстве) ----------
 const SCORE_KEY = 'domino-score-v1';
@@ -203,6 +203,8 @@ class Game extends Screen {
 
   pump() {
     const c = this.game.netCtx; if (!c || !c.inbox.length) return;
+    while (c.inbox.length && ['lobby', 'room', 'name'].includes(c.inbox[0].type)) c.inbox.shift(); // служебные сообщения лобби
+    if (!c.inbox.length) return;
     const m = c.inbox[0], urgent = ['init', 'restart', 'rematch', 'bye', 'drew', 'draw'].includes(m.type);
     if (this.busy && !urgent) return;
     c.inbox.shift(); this.onNet(m);
@@ -977,7 +979,7 @@ class Lobby extends Screen {
     const c = this.ctx; if (!c || !this.waitT || !this.waitT.active) return;
     this.waitT.setText('Подключено: ' + (c.conns.length + 1) + ' из ' + c.n + '\nНе закрывайте эту страницу.');
   }
-  broadcastLobby() { const c = this.ctx; if (c) c.conns.forEach(x => { if (x.open) x.send({ type: 'lobby', count: c.conns.length + 1, n: c.n }); }); }
+  broadcastLobby() { const c = this.ctx; if (c && c.n > 2) c.conns.forEach(x => { if (x.open) x.send({ type: 'lobby', count: c.conns.length + 1, n: c.n }); }); }
 
   startHost(cfg, tries) {
     this.cleanup(); this.clear(); cfg = cfg || this.cfg || { n: 2, teams: false }; this.cfg = cfg;
