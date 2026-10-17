@@ -1,5 +1,6 @@
 // Домино по-одесски — Phaser 4
-const W = 480, H = 800, TL = 52, TH = 28;
+const W = 480, H = 800, TL = 64, TH = 34;
+const PS = TH * 6 / 28, PR = TH * 2.3 / 28; // шаг и радиус точек зависят от размера костяшки
 const PIPS = {0:[],1:[[0,0]],2:[[-1,-1],[1,1]],3:[[-1,-1],[0,0],[1,1]],4:[[-1,-1],[1,-1],[-1,1],[1,1]],
   5:[[-1,-1],[1,-1],[0,0],[-1,1],[1,1]],6:[[-1,-1],[1,-1],[-1,0],[1,0],[-1,1],[1,1]]};
 const SAY = {
@@ -22,7 +23,7 @@ const SAY = {
   midG: ["Не первый, но и не последний. Серебро — тоже награда!", "Вы вышли из игры живым и здоровым. Уважаем!", "Проигрывает другой, а вы — молодец!"],
   draw0: ["Ничья! Как в Одессе: все довольны и никто не доволен.", "Ничья, шо тут скажешь. Разошлись мирно!", "Поровну! Такое бывает только в Одессе."]
 };
-const VER = 'v35';
+const VER = 'v36';
 const TARGET = 101;
 // ---------- счёт (хранится на устройстве) ----------
 const SCORE_KEY = 'domino-score-v1';
@@ -122,11 +123,13 @@ class Game extends Screen {
     this.markR = this.add.text(0, 0, 'ПРАВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#28a745', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.bazar = this.btn(90, 762, 170, 'Привоз', 0x28a745, () => this.takeBazar());
     this.passB = this.btn(90, 762, 170, 'Пропустить ход', 0xdc3545, () => this.pass()).setVisible(false);
-    this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again());
+    this.againB = this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again(), 16);
     this.btn(340, 762, 90, 'Меню', 0x6f42c1, () => { this.leaveNet(); this.scene.start('menu'); });
     this.snd = this.btn(428, 762, 56, this.sfx.on ? '🔊' : '🔇', 0x555566, () => {
       this.sfx.on = !this.sfx.on; this.snd.t.setText(this.sfx.on ? '🔊' : '🔇');
     });
+    this.toastT = this.add.text(W / 2, 556, '', { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#ffd400', stroke: '#000', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(400);
+    this.myRdy = false; this.oppRdy = false;
     this.recorded = false; this.sideBtns = []; this.myPassPips = null; this.oppPassPips = null; this.lastHl = null;
     if (this.net) this.netStart(); else this.newGame();
   }
@@ -137,10 +140,17 @@ class Game extends Screen {
     this.scoreD.setText(r.d ? 'ничьих: ' + r.d : '');
   }
 
+  // «Заново» по сети: партия начинается, только когда нажали оба игрока
   again() {
     if (!this.net) return this.scene.restart({ mode: 'bot' });
-    if (this.isHost) return this.rematch();
-    this.sendNet({ type: 'rematch' }); this.setMsg('Просим соперника начать новую партию…');
+    if (this.myRdy) return;
+    this.myRdy = true; this.sendNet({ type: 'rematch' }); this.updateRdy();
+    if (this.isHost && this.oppRdy) this.rematch();
+  }
+  updateRdy() {
+    const k = (this.myRdy ? 1 : 0) + (this.oppRdy ? 1 : 0);
+    this.againB.t.setText(k ? 'Заново ' + k + '/2' : 'Заново');
+    this.toastT.setText(!k ? '' : this.myRdy ? 'Ждём соперника… (' + k + ' из 2)' : (this.oppName || 'Соперник') + ' хочет заново — нажмите «Заново»');
   }
   rematch() { this.sendNet({ type: 'restart' }); this.game.netCtx.inbox.length = 0; this.scene.restart({ mode: 'net' }); }
   leaveNet() {
@@ -163,9 +173,9 @@ class Game extends Screen {
     const c = this.add.container(x, y), g = this.add.graphics();
     g.fillStyle(0xfdfdfd).fillRoundedRect(-TL / 2, -TH / 2, TL, TH, 5);
     g.lineStyle(1, 0x111111).strokeRoundedRect(-TL / 2, -TH / 2, TL, TH, 5);
-    g.lineStyle(2, 0x777777).lineBetween(0, -TH / 2 + 4, 0, TH / 2 - 4);
+    g.lineStyle(2.5, 0x777777).lineBetween(0, -TH / 2 + 4, 0, TH / 2 - 4);
     g.fillStyle(0x111115);
-    [[l, -TL / 4], [r, TL / 4]].forEach(([n, cx]) => PIPS[n].forEach(([gx, gy]) => g.fillCircle(cx + gx * 6, gy * 6, 2.3)));
+    [[l, -TL / 4], [r, TL / 4]].forEach(([n, cx]) => PIPS[n].forEach(([gx, gy]) => g.fillCircle(cx + gx * PS, gy * PS, PR)));
     c.add(g); c.setSize(TL, TH);
     return c;
   }
@@ -214,7 +224,7 @@ class Game extends Screen {
     switch (m.type) {
       case 'init': if (!this.isHost) this.startRound(m.hand, Array(7).fill(null), Array(m.pool).fill(null), m.first === 'g' ? 'p' : 'b'); break;
       case 'restart': this.scene.restart({ mode: 'net' }); break;
-      case 'rematch': if (this.isHost) this.rematch(); break;
+      case 'rematch': this.oppRdy = true; this.updateRdy(); if (this.isHost && this.myRdy) this.rematch(); break;
       case 'bye':
         if (this.over) break;
         this.over = true; this.turn = null; this.busy = false;
@@ -255,11 +265,50 @@ class Game extends Screen {
     const k = a < b ? 'win' : a > b ? 'lose' : 'draw0';
     this.fin('РЫБА! Очки: вы ' + a + ', ' + (this.net ? 'соперник ' : 'бот ') + b + '.', k, () => (k === 'lose' ? this.sfx.lose() : this.sfx.win()));
   }
+  burst(x, y) {
+    const cs = [0xffd400, 0xff5c6c, 0x2ecc40, 0x8ab4ff, 0xffffff];
+    for (let i = 0; i < 18; i++) {
+      const a = i / 18 * Math.PI * 2, d = 50 + Math.random() * 55, c = this.add.circle(x, y, 3 + Math.random() * 2.5, cs[i % cs.length]).setDepth(500);
+      this.tweens.add({ targets: c, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d + 24, alpha: 0, scale: 0.3, duration: 800 + Math.random() * 400, ease: 'Cubic.easeOut', onComplete: () => c.destroy() });
+    }
+  }
+
+  // Событие в конце партии: победа — конфетти, фейерверк и вибрация; поражение — дождь, затемнение и тряска
+  celebrate(kind, title) {
+    const T = { win: '🏆 ПОБЕДА! 🏆', lose: '😢 ПОРАЖЕНИЕ', draw0: '🤝 НИЧЬЯ', mid: '🥈 НЕПЛОХО!' }[kind]; if (!T) return;
+    title = title || T;
+    try { if (navigator.vibrate) navigator.vibrate(kind === 'win' ? [120, 60, 120, 60, 320] : kind === 'lose' ? [450] : [150]); } catch (e) {}
+    if (kind === 'lose') {
+      const sh = this.add.rectangle(W / 2, H / 2, W, H, 0x10182a).setAlpha(0).setDepth(499);
+      this.tweens.add({ targets: sh, alpha: 0.45, duration: 500, yoyo: true, hold: 1500, onComplete: () => sh.destroy() });
+      for (let i = 0; i < 70; i++) {
+        const d = this.add.rectangle(Math.random() * W, -20, 2, 16, 0x7aa2d6).setDepth(500).setAlpha(0.8);
+        this.tweens.add({ targets: d, y: H + 30, duration: 650 + Math.random() * 600, delay: Math.random() * 1800, repeat: 1, onComplete: () => d.destroy() });
+      }
+      this.cameras.main.shake(350, 0.006);
+    } else {
+      const pal = { win: [0xffd400, 0x2ecc40, 0x007bff, 0xff5c6c, 0xc678dd, 0xffffff], mid: [0xc0c0c0, 0xffffff, 0x8ab4ff], draw0: [0x8ab4ff, 0xffffff] }[kind];
+      const N = kind === 'win' ? 90 : 35;
+      for (let i = 0; i < N; i++) {
+        const r = this.add.rectangle(Math.random() * W, -30 - Math.random() * 240, 6 + Math.random() * 7, 10 + Math.random() * 9, pal[i % pal.length]).setDepth(500).setRotation(Math.random() * 6);
+        this.tweens.add({ targets: r, y: H + 40, x: r.x + (Math.random() - 0.5) * 140, rotation: r.rotation + (Math.random() > 0.5 ? 1 : -1) * (6 + Math.random() * 8),
+          duration: 2200 + Math.random() * 2200, delay: Math.random() * 900, ease: 'Sine.easeIn', onComplete: () => r.destroy() });
+      }
+      if (kind === 'win') [[110, 300], [370, 260], [240, 420], [120, 520], [360, 500]].forEach(([x, y], k) => this.time.delayedCall(250 + k * 380, () => this.burst(x, y)));
+    }
+    const col = { win: '#ffd400', lose: '#9fb3c8', draw0: '#ffffff', mid: '#dfe6ee' }[kind];
+    const b = this.add.text(W / 2, 255, title, { fontFamily: FONT, fontSize: (title.length > 14 ? 36 : 46) + 'px', fontStyle: 'bold', color: col, stroke: '#000', strokeThickness: 6, align: 'center', wordWrap: { width: 440 } })
+      .setOrigin(0.5).setDepth(501).setScale(0).setAngle(kind === 'win' ? -6 : 0);
+    this.tweens.add({ targets: b, scale: 1, duration: 450, ease: 'Back.easeOut' });
+    if (kind === 'win') this.tweens.add({ targets: b, angle: 6, duration: 500, yoyo: true, repeat: 3, delay: 450 });
+    this.time.delayedCall(2800, () => this.tweens.add({ targets: b, alpha: 0, duration: 500, onComplete: () => b.destroy() }));
+  }
+
   fin(msg, key, snd) {
     if (!this.recorded) { this.recorded = true; addResult(this.net ? 'net' : 'bot', key); addSess(this.net ? 'net' : 'bot', key); this.refreshScore(); }
     this.over = true; this.turn = null; this.busy = false;
     const kk = this.net && (key === 'win' || key === 'lose') ? key + 'Net' : key;
-    this.say(msg + ' ' + pick(SAY[kk])); snd(); this.updateButtons(); this.layoutHand(); return true;
+    this.say(msg + ' ' + pick(SAY[kk])); snd(); this.celebrate(key); this.updateButtons(); this.layoutHand(); return true;
   }
 
   newGame() {
@@ -285,7 +334,7 @@ class Game extends Screen {
   }
 
   makeHandObj(t) {
-    const o = this.makeTile(t[0], t[1], W / 2, 700); o.setAngle(90).setScale(1.25); o.tile = t;
+    const o = this.makeTile(t[0], t[1], W / 2, 700); o.setAngle(90).setScale(1.5); o.tile = t;
     const gl = this.add.graphics();
     gl.fillStyle(0x2ecc40, 0.25).fillRoundedRect(-TL / 2, -TH / 2, TL, TH, 5);
     gl.lineStyle(6, 0x2ecc40, 0.35).strokeRoundedRect(-TL / 2 - 3, -TH / 2 - 3, TL + 6, TH + 6, 8);
@@ -297,13 +346,13 @@ class Game extends Screen {
   }
 
   layoutHand() {
-    const n = this.hobj.length, sp = Math.min(46, 440 / Math.max(n, 1));
+    const n = this.hobj.length, sp = Math.min(62, 452 / Math.max(n, 1));
     const mine = this.turn === 'p' && !this.over;
     this.stripe.clear().fillStyle(mine ? 0x2ecc40 : 0x007bff).fillRect(16, 40, 5, 88);
     this.hobj.forEach((o, i) => {
-      const ok = mine && this.canPlay(o.tile), lift = ok ? -12 : 0;
+      const ok = mine && this.canPlay(o.tile), lift = ok ? -14 : 0;
       if (o.glow) o.glow.setVisible(ok);
-      this.tweens.add({ targets: o, x: W / 2 + (i - (n - 1) / 2) * sp, y: 690 + lift, duration: 250 });
+      this.tweens.add({ targets: o, x: W / 2 + (i - (n - 1) / 2) * sp, y: 684 + lift, duration: 250 });
       o.setDepth(i);
     });
   }
@@ -369,7 +418,7 @@ class Game extends Screen {
     const from = { x: ho.x, y: ho.y }; if (ho.glow) this.tweens.killTweensOf(ho.glow); ho.destroy();
     if (who === 'p') { this.hobj = this.hobj.filter(x => x !== ho); this.hp = this.hp.filter(x => x !== t); }
     else this.removeOpp(t);
-    const obj = this.makeTile(l, r, from.x, from.y).setAngle(90).setScale(who === 'p' ? 1.25 : 1);
+    const obj = this.makeTile(l, r, from.x, from.y).setAngle(90).setScale(who === 'p' ? 1.5 : 1);
     const item = { l, r, obj };
     this.markLast(obj, who);
     side === 'l' && e ? this.board.unshift(item) : this.board.push(item);
@@ -377,7 +426,7 @@ class Game extends Screen {
     this.sfx.draw();
     this.time.delayedCall(320, () => {
       this.sfx.clack(); this.cameras.main.shake(80, 0.002);
-      this.tweens.add({ targets: obj, scale: { from: who === 'p' ? 1.15 : 1.6, to: 1 }, duration: who === 'p' ? 150 : 350 });
+      this.tweens.add({ targets: obj, scale: { from: who === 'p' ? 1.3 : 1.6, to: 1 }, duration: who === 'p' ? 150 : 350 });
       this.turn = who === 'p' ? 'b' : 'p'; this.layoutHand();
       // даём прочитать реплику бота; в сети ждём меньше
       this.time.delayedCall(who === 'p' ? 250 : (this.net ? 1200 : 2400), () => { this.busy = false; this.next(); });
@@ -397,8 +446,8 @@ class Game extends Screen {
   }
 
   pos(i, n) {
-    const row = Math.floor(i / 8), col = i % 8, rev = row % 2, rows = Math.ceil(n / 8);
-    return { x: 44 + (rev ? 7 - col : col) * 56, y: 380 + (row - (rows - 1) / 2) * 52, a: rev ? 180 : 0 };
+    const COLS = 6, SPX = 68, SPY = 66, row = Math.floor(i / COLS), col = i % COLS, rev = row % 2, rows = Math.ceil(n / COLS);
+    return { x: W / 2 + ((rev ? COLS - 1 - col : col) - (COLS - 1) / 2) * SPX, y: 380 + (row - (rows - 1) / 2) * SPY, a: rev ? 180 : 0 };
   }
 
   renderBoard(anim) {
@@ -412,7 +461,7 @@ class Game extends Screen {
     });
     if (!n) return;
     const a = this.pos(0, n), b = this.pos(n - 1, n);
-    const oa = this.board[0].l === this.board[0].r ? 40 : 26, ob = this.board[n - 1].l === this.board[n - 1].r ? 40 : 26;
+    const oa = this.board[0].l === this.board[0].r ? TL / 2 + 14 : TH / 2 + 12, ob = this.board[n - 1].l === this.board[n - 1].r ? TL / 2 + 14 : TH / 2 + 12;
     this.markL.setPosition(a.x, a.y - oa).setVisible(true); this.markR.setPosition(b.x, b.y + ob).setVisible(true);
   }
 
@@ -503,7 +552,9 @@ class Table extends Game {
     this.markR = this.add.text(0, 0, 'ПРАВ', { fontFamily: FONT, fontSize: '11px', backgroundColor: '#28a745', color: '#fff', padding: { x: 3, y: 1 } }).setOrigin(0.5).setDepth(20).setVisible(false);
     this.bazar = this.btn(90, 762, 170, 'Привоз', 0x28a745, () => this.takeBazar());
     this.passB = this.btn(90, 762, 170, 'Пропустить ход', 0xdc3545, () => this.pass()).setVisible(false);
-    this.againB = this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again());
+    this.againB = this.btn(232, 762, 100, 'Заново', 0x007bff, () => this.again(), 16);
+    this.toastT = this.add.text(W / 2, 556, '', { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#ffd400', stroke: '#000', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(400);
+    this.myRdy = false; this.rdy = new Set();
     this.btn(340, 762, 90, 'Меню', 0x6f42c1, () => { this.leaveNet(); this.scene.start('menu'); });
     this.snd = this.btn(428, 762, 56, this.sfx.on ? '🔊' : '🔇', 0x555566, () => {
       this.sfx.on = !this.sfx.on; this.snd.t.setText(this.sfx.on ? '🔊' : '🔇');
@@ -589,7 +640,7 @@ class Table extends Game {
     const c = this.ctx; if (!c) return;
     if (this.isHost) while (c.inbox.length) this.hostMsg(c.inbox.shift());
     const q = this.isHost ? this.evq : c.inbox; if (!q.length) return;
-    const m = q[0], urgent = ['deal', 'restart', 'bye', 'left', 'lobby'].includes(m.type);
+    const m = q[0], urgent = ['deal', 'restart', 'bye', 'left', 'lobby', 'rdy'].includes(m.type);
     if (this.busy && !urgent) return;
     q.shift(); this.onEvt(m);
   }
@@ -622,7 +673,7 @@ class Table extends Game {
   hostMsg(m) {
     const seat = this.ctx.conns.indexOf(m._c) + 1;
     if (m.type === 'bye') { if (seat > 0 && this.hs && !this.hs.over) { this.hs.over = true; this.emit({ type: 'left', seat }); } }
-    else if (m.type === 'rematch') this.rematch();
+    else if (m.type === 'rematch') { if (seat > 0) { this.rdy.add(seat); this.rdyCheck(); } }
     else if (m.type === 'act' && seat > 0) this.hostAct(seat, m);
   }
 
@@ -713,10 +764,22 @@ class Table extends Game {
     this.ctx.conns.forEach(c => c.send({ type: 'restart' }));
     this.ctx.inbox.length = 0; this.scene.restart();
   }
+  // «Заново»: партия начинается, когда нажали все игроки
   again() {
-    if (this.isHost) return this.rematch();
-    if (this.ctx && this.ctx.conn && this.ctx.conn.open) this.ctx.conn.send({ type: 'rematch' });
-    this.setMsg('Просим хозяина комнаты начать новую партию…');
+    if (this.myRdy) return; this.myRdy = true;
+    if (this.isHost) { this.rdy.add(0); this.rdyCheck(); }
+    else if (this.ctx && this.ctx.conn && this.ctx.conn.open) this.ctx.conn.send({ type: 'rematch' });
+  }
+  rdyCheck() {
+    const seats = [...this.rdy];
+    this.ctx.conns.forEach(c => { if (c.open) c.send({ type: 'rdy', seats }); });
+    this.updateRdy(seats);
+    if (seats.length >= this.n) this.rematch();
+  }
+  updateRdy(seats) {
+    const k = seats.length, me = seats.includes(this.seat);
+    this.againB.t.setText(k ? 'Заново ' + k + '/' + this.n : 'Заново');
+    this.toastT.setText(!k ? '' : me ? 'Ждём остальных… (' + k + ' из ' + this.n + ')' : k + ' из ' + this.n + ' хотят заново — нажмите «Заново»');
   }
 
   // ---------- все: показ событий ----------
@@ -724,6 +787,7 @@ class Table extends Game {
     switch (m.type) {
       case 'lobby': if (this.seat === null) this.setMsg('Ждём игроков: ' + m.count + ' из ' + m.n + '…'); break;
       case 'restart': this.scene.restart(); break;
+      case 'rdy': this.updateRdy(m.seats); break;
       case 'deal': {
         this.seat = m.seat; this.n = m.n; this.teams = m.teams; this.hp = m.hand; this.poolN = m.pool; this.names = m.names || []; this.outSeats = []; this.scoreMode = m.score || 'none'; this.match = m.match || null;
         if (this.match && this.match.round === 1) { resetSess('grp'); this.refreshScore(); }
@@ -817,6 +881,8 @@ class Table extends Game {
     this.setMsg(head + tail);
     const sk = mt && mt.done ? mt.res[this.seat] : key;
     sk === 'lose' ? this.sfx.lose() : this.sfx.win();
+    let title; if (mt && mt.done) title = sk === 'win' ? '🏆 ПОБЕДА В ИГРЕ! 🏆' : sk === 'lose' ? '🐐 КОЗЁЛ! 🐐' : null;
+    this.celebrate(sk, title);
     this.updateButtons(); this.layoutHand(); this.drawOpps();
   }
 
@@ -855,14 +921,14 @@ class Table extends Game {
     else { r = t[1] === e.l ? t[1] : t[0]; l = r === t[1] ? t[0] : t[1]; }
     const from = { x: ho.x, y: ho.y }; if (ho.glow) this.tweens.killTweensOf(ho.glow); ho.destroy();
     if (mine) { this.hobj = this.hobj.filter(x => x !== ho); this.hp = this.hp.filter(x => !(x[0] === t[0] && x[1] === t[1])); }
-    const obj = this.makeTile(l, r, from.x, from.y).setAngle(90).setScale(mine ? 1.25 : 1);
+    const obj = this.makeTile(l, r, from.x, from.y).setAngle(90).setScale(mine ? 1.5 : 1);
     const item = { l, r, obj };
     this.markLast(obj, mine ? 'p' : 'b');
     side === 'l' && e ? this.board.unshift(item) : this.board.push(item);
     this.drawOpps(); this.renderBoard(true); this.sfx.draw();
     this.time.delayedCall(320, () => {
       this.sfx.clack(); this.cameras.main.shake(80, 0.002);
-      this.tweens.add({ targets: obj, scale: { from: mine ? 1.15 : 1.6, to: 1 }, duration: mine ? 150 : 350 });
+      this.tweens.add({ targets: obj, scale: { from: mine ? 1.3 : 1.6, to: 1 }, duration: mine ? 150 : 350 });
       this.time.delayedCall(mine ? 250 : 1000, () => { this.busy = false; this.afterEvt(m); });
     });
     this.layoutHand();
